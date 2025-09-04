@@ -54,18 +54,30 @@ const Signup = () => {
       return;
     }
 
-    const success = await signup(name, email, password, school);
-    
-    if (success) {
+    try {
+      await signup(name, email, password, school);
       toast({
         title: "Account created successfully!",
         description: "Welcome to SkillMap",
       });
       navigate('/dashboard');
-    } else {
+    } catch (error: any) {
+      let errorMessage = "Signup failed. Please try again later.";
+      
+      // Handle specific Firebase auth errors
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "An account with this email already exists.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address format.";
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak. Please choose a stronger password.";
+      } else if (error.code === 'auth/operation-not-allowed') {
+        errorMessage = "Email/password accounts are not enabled. Please contact support.";
+      }
+      
       toast({
         title: "Signup failed",
-        description: "Please try again later",
+        description: errorMessage,
         variant: "destructive"
       });
     }

@@ -1,4 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  User as FirebaseUser,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  updateProfile
+} from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 
 interface User {
   id: string;
@@ -11,7 +21,7 @@ interface AuthContextType {
   user: User | null;
   login: (email: string, password: string) => Promise<boolean>;
   signup: (name: string, email: string, password: string, school: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isLoading: boolean;
 }
 
@@ -30,56 +40,95 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    const storedUser = localStorage.getItem('skillmap_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
-    }
-    setIsLoading(false);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser: FirebaseUser | null) => {
+      if (firebaseUser) {
+        try {
+          // Get additional user data from Firestore
+          const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (userDoc.exists()) {
+            const userData = userDoc.data();
+            setUser({
+              id: firebaseUser.uid,
+              name: userData.name || firebaseUser.displayName || 'User',
+              email: firebaseUser.email || '',
+              school: userData.school || ''
+            });
+          } else {
+            // Fallback to basic user info
+            setUser({
+              id: firebaseUser.uid,
+              name: firebaseUser.displayName || 'User',
+              email: firebaseUser.email || '',
+              school: ''
+            });
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+          // Fallback to basic user info
+          setUser({
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName || 'User',
+            email: firebaseUser.email || '',
+            school: ''
+          });
+        }
+      } else {
+        setUser(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    setIsLoading(true);
-    
-    // Simulate API call - in real app this would be actual authentication
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Demo user for now
-    const mockUser: User = {
-      id: '1',
-      name: 'Teacher Demo',
-      email: email,
-      school: 'Government Primary School'
-    };
-    
-    setUser(mockUser);
-    localStorage.setItem('skillmap_user', JSON.stringify(mockUser));
-    setIsLoading(false);
-    return true;
+    try {
+      setIsLoading(true);
+      await signInWithEmailAndPassword(auth, email, password);
+      return true;
+    } catch (error) {
+      console.error('Login error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const signup = async (name: string, email: string, password: string, school: string): Promise<boolean> => {
-    setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    const newUser: User = {
-      id: Date.now().toString(),
-      name,
-      email,
-      school
-    };
-    
-    setUser(newUser);
-    localStorage.setItem('skillmap_user', JSON.stringify(newUser));
-    setIsLoading(false);
-    return true;
+    try {
+      setIsLoading(true);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Update profile with display name
+      await updateProfile(userCredential.user, {
+        displayName: name
+      });
+
+      // Store additional user data in Firestore
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        name,
+        email,
+        school,
+        createdAt: new Date(),
+        role: 'teacher'
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('skillmap_user');
+  const logout = async (): Promise<void> => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error('Logout error:', error);
+      throw error;
+    }
   };
 
   return (

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,6 +13,10 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const { login, isLoading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get the intended destination from navigation state
+  const from = location.state?.from?.pathname || '/dashboard';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,18 +30,32 @@ const Login = () => {
       return;
     }
 
-    const success = await login(email, password);
-    
-    if (success) {
+    try {
+      await login(email, password);
       toast({
         title: "Welcome to SkillMap!",
         description: "Successfully logged in",
       });
-      navigate('/dashboard');
-    } else {
+      navigate(from, { replace: true });
+    } catch (error: any) {
+      let errorMessage = "Login failed. Please check your credentials.";
+      
+      // Handle specific Firebase auth errors
+      if (error.code === 'auth/user-not-found') {
+        errorMessage = "No account found with this email address.";
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = "Incorrect password. Please try again.";
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address format.";
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = "Too many failed attempts. Please try again later.";
+      } else if (error.code === 'auth/user-disabled') {
+        errorMessage = "This account has been disabled.";
+      }
+      
       toast({
         title: "Login failed",
-        description: "Please check your credentials",
+        description: errorMessage,
         variant: "destructive"
       });
     }
